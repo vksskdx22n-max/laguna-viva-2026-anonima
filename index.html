@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Laguna Viva v7.13</title>
+<title>Laguna Viva v7.14</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/5.7.3/maplibre-gl.min.css">
 <style>
 :root{
@@ -233,15 +233,19 @@ body.leg-chiusa #legenda{display:none}
   #contatori{top:8px;right:54px!important;gap:12px}
   .cnt .num{font-size:15px}
   .cnt .lbl{font-size:7px;letter-spacing:.12em}
-  #infoUscita{top:46px;left:8px;min-width:0;width:172px;padding:8px 10px;border-radius:10px}
-  #infoUscita .data{font-size:12px}
-  #infoUscita .dove{font-size:10px}
-  #infoUscita .metriche{gap:12px;margin-top:6px}
-  #infoUscita .m .v{font-size:13px}
-  #iuMareaCv{width:100%;height:36px}
-  #iuMarea .mr-testa{font-size:11px;gap:6px;white-space:nowrap}
-  #scrub{margin-top:6px}
-  #dateBadge{top:46px;left:188px;right:52px;max-width:none;max-height:38vh;overflow-y:auto;pointer-events:auto;gap:4px;align-content:flex-start}
+  #infoUscita{top:46px;left:8px;min-width:0;width:138px;padding:6px 8px;border-radius:9px}   /* v7.14 — piu' piccolo */
+  #infoUscita .data{font-size:11px}
+  #infoUscita .dove{font-size:9px}
+  #infoUscita .ora-gps{font-size:16px;margin-top:2px}
+  #infoUscita .metriche{gap:10px;margin-top:3px}
+  #infoUscita .m .v{font-size:12px}
+  #infoUscita .m .k{font-size:7px}
+  #iuMareaCv{width:100%;height:26px}
+  #iuMarea{margin-top:5px}
+  #iuMarea .mr-testa{font-size:9.5px;gap:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #iuMarea .mr-k{display:none}
+  #scrub{margin-top:4px}
+  #dateBadge{top:46px;left:154px;right:52px;max-width:none;max-height:38vh;overflow-y:auto;pointer-events:auto;gap:4px;align-content:flex-start}
   .mk-data{font-size:10px;padding:2px 5px}
   #legenda{left:8px;right:8px;bottom:70px;max-height:45vh;overflow-y:auto}
   #comandi{left:8px;right:8px;bottom:10px;transform:none;overflow-x:auto;justify-content:flex-start;gap:8px;padding:6px 10px;
@@ -273,7 +277,7 @@ body.leg-chiusa #legenda{display:none}
 <div id="velo"><div class="t">LAGUNA VIVA</div><div class="s">CARICAMENTO STAGIONE 2026…</div></div>
 
 <div class="hud" id="titolo"><h1>LAGUNA <b>VIVA</b></h1>
-  <div class="sub">Replay stagione 2026 · <span id="etichettaDati">dati FD</span> · v7.13</div></div>
+  <div class="sub">Replay stagione 2026 · <span id="etichettaDati">dati FD</span> · v7.14</div></div>
 
 <div class="hud" id="contatori">
   <div class="cnt"><div class="num" id="cUscite">0</div><div class="lbl">Uscite</div></div>
@@ -990,8 +994,22 @@ const audio=(function(){
     g.gain.setValueAtTime(.09,t+dur*.55);g.gain.exponentialRampToValueAtTime(.0001,t+dur);
     o.connect(bp);bp.connect(hp);hp.connect(g);g.connect(master);o.start(t);o.stop(t+dur+.05);
   }
-  function sblocca(){if(!attivo)return;if(init()&&ctx.state==='suspended')ctx.resume();}
-  ['pointerdown','keydown'].forEach(ev=>window.addEventListener(ev,sblocca,{passive:true}));
+  /* v7.14 — sblocco audio su iPhone: Safari lo accetta solo dentro un tocco vero (touchend/click), suona anche
+     con l'interruttore silenzioso se audioSession = playback (iOS 17+); il suono ambiente chiesto prima del
+     primo tocco (filmato partito da solo) viene applicato appena l'audio si sblocca */
+  let ambPendente=null,sbloccato=false;
+  function sblocca(){
+    if(!attivo)return;
+    try{if(navigator.audioSession)navigator.audioSession.type='playback';}catch(e){}
+    if(!init())return;
+    if(ctx.state==='suspended')ctx.resume();
+    if(!sbloccato){
+      try{const b=ctx.createBuffer(1,1,22050),s=ctx.createBufferSource();s.buffer=b;s.connect(ctx.destination);s.start(0);}catch(e){}
+      sbloccato=true;
+    }
+    if(ambPendente){const v=ambPendente.v;ambPendente=null;setTimeout(()=>{try{audioApi.ambiente(true,v)}catch(e){}},50);}
+  }
+  ['pointerdown','touchend','click','keydown'].forEach(ev=>window.addEventListener(ev,sblocca,{passive:true}));
   function fermaAmbiente(){
     ambOn=false;
     if(!ctx)return;const t=ctx.currentTime;
@@ -999,7 +1017,7 @@ const audio=(function(){
     vento.gain.cancelScheduledValues(t);vento.gain.setValueAtTime(vento.gain.value,t);vento.gain.linearRampToValueAtTime(0,t+1);
     sciaG.gain.cancelScheduledValues(t);sciaG.gain.setValueAtTime(sciaG.gain.value,t);sciaG.gain.linearRampToValueAtTime(0,t+1);
   }
-  return {
+  const audioApi={
     sblocca,
     get attivo(){return attivo},
     get stato(){return ctx?ctx.state:'nessuno'},
@@ -1013,8 +1031,9 @@ const audio=(function(){
     },
     /* v7.10 — on: vento solo sopra 4,5 m/s (la scia la pilota il replay con scia()); gabbiani tolti · off: silenzio completo in 1 s */
     ambiente(on,ventoMs){
-      if(!on){fermaAmbiente();return;}
-      if(!ctx||!attivo)return;const t=ctx.currentTime;
+      if(!on){ambPendente=null;fermaAmbiente();return;}
+      if(!ctx||!attivo||ctx.state!=='running'){if(attivo)ambPendente={v:ventoMs};return;}   /* v7.14 — in attesa del primo tocco */
+      const t=ctx.currentTime;
       amb.gain.cancelScheduledValues(t);amb.gain.setValueAtTime(amb.gain.value,t);amb.gain.linearRampToValueAtTime(1,t+1.5);
       const v=ventoMs||0,vg=v>=4.5?.015+.06*Math.min(1,(v-4.5)/6):0;
       vento.gain.cancelScheduledValues(t);vento.gain.setTargetAtTime(vg,t,1.2);
@@ -1061,6 +1080,7 @@ const audio=(function(){
     },
     pad(){}   /* v7.8 — non piu' usato: lasciato vuoto per compatibilita' */
   };
+  return audioApi;
 })();
 
 /* ================= v7.2 — REGIA AUTOMATICA: 3 inquadrature ben distinte, passaggi animati di 1,5 s ================= */
